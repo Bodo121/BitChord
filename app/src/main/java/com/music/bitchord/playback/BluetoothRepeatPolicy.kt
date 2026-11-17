@@ -15,14 +15,17 @@ import androidx.media3.common.Player
  * repeat is still controlled by the app, watch and identified Auto clients.
  */
 internal object BluetoothRepeatPolicy {
-    fun availableCommands(packageName: String, defaults: Player.Commands): Player.Commands {
+    fun allowsCommand(packageName: String, command: Int): Boolean {
         val bluetooth = packageName == "com.android.bluetooth" ||
             packageName == "com.google.android.bluetooth" ||
             packageName == "android.media.session.MediaController"
-        return if (bluetooth) {
-            defaults.buildUpon().remove(Player.COMMAND_SET_REPEAT_MODE).build()
-        } else {
-            defaults
-        }
+        return command != Player.COMMAND_SET_REPEAT_MODE || !bluetooth
     }
+
+    fun availableCommands(packageName: String, defaults: Player.Commands): Player.Commands =
+        if (allowsCommand(packageName, Player.COMMAND_SET_REPEAT_MODE)) {
+            defaults
+        } else {
+            defaults.buildUpon().remove(Player.COMMAND_SET_REPEAT_MODE).build()
+        }
 }

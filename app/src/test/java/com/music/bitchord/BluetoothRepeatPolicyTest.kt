@@ -2,26 +2,27 @@ package com.music.bitchord
 
 import androidx.media3.common.Player
 import com.music.bitchord.playback.BluetoothRepeatPolicy
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BluetoothRepeatPolicyTest {
-    private val commands = Player.Commands.Builder().addAllCommands().build()
+    // Keep these tests independent of Android's SparseBooleanArray backing
+    // Player.Commands, since ordinary JVM tests use a stub android.jar.
+    private val transportCommands = listOf(
+        Player.COMMAND_PLAY_PAUSE, Player.COMMAND_SEEK_TO_NEXT,
+        Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_GET_METADATA,
+        Player.COMMAND_SET_SHUFFLE_MODE, Player.COMMAND_SET_VOLUME,
+    )
 
     @Test
-    fun `car connection cannot set repeat but retains every other command`() {
+    fun `car connection cannot set repeat but retains transport and metadata`() {
         listOf("com.android.bluetooth", "com.google.android.bluetooth",
             "android.media.session.MediaController").forEach { caller ->
-            val allowed = BluetoothRepeatPolicy.availableCommands(caller, commands)
-            assertFalse(allowed.contains(Player.COMMAND_SET_REPEAT_MODE))
-            for (i in 0 until commands.size()) {
-                val command = commands[i]
-                if (command != Player.COMMAND_SET_REPEAT_MODE) assertTrue(allowed.contains(command))
+            assertFalse(BluetoothRepeatPolicy.allowsCommand(caller, Player.COMMAND_SET_REPEAT_MODE))
+            transportCommands.forEach { command ->
+                assertTrue(BluetoothRepeatPolicy.allowsCommand(caller, command))
             }
-            // The defaults must not be mutated for the next app connection.
-            assertTrue(commands.contains(Player.COMMAND_SET_REPEAT_MODE))
         }
     }
 
@@ -29,7 +30,7 @@ class BluetoothRepeatPolicyTest {
     fun `phone watch and Android Auto can still choose repeat`() {
         listOf("com.music.bitchord", "com.dev.bitchord", "com.music.bitchord.wear",
             "com.google.android.projection.gearhead", "com.android.systemui").forEach { caller ->
-            assertEquals(commands, BluetoothRepeatPolicy.availableCommands(caller, commands))
+            assertTrue(BluetoothRepeatPolicy.allowsCommand(caller, Player.COMMAND_SET_REPEAT_MODE))
         }
     }
 }
