@@ -8641,7 +8641,12 @@ class PlaybackService : MediaLibraryService() {
                 .add(queueDragCommand)
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                .setAvailablePlayerCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS)
+                .setAvailablePlayerCommands(
+                    BluetoothRepeatPolicy.availableCommands(
+                        controller.packageName,
+                        MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS,
+                    ),
+                )
                 .setAvailableSessionCommands(sessionCommands)
                 .build()
         }

@@ -1,0 +1,37 @@
+name: Sync upstream and build release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge official main while retaining fork patches
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/kushagrasinghx/BitChord.git
+          git fetch upstream main
+          # A three-way merge keeps our patch commits. A conflict stops the
+          # workflow before pushing; it never resets or force-pushes main.
+          git merge --no-edit upstream/main
+          python3 .github/scripts/check-fork.py
+          git push origin HEAD:main
+  # GITHUB_TOKEN pushes do not trigger other push workflows. Explicitly call
+  # the release builder, even when upstream had nothing new to merge.
+  release:
+    needs: sync
+    uses: ./.github/workflows/android.yml
+    secrets: inherit

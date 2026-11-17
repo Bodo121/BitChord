@@ -1,56 +1,114 @@
-name: Android Release APK
+name: Fork Release APK
 
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md']
   workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
 
 jobs:
-  build-prod-release:
+  release:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 90
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: gradle
-
-    - name: Setup Secrets (Keystore & local.properties)
-      run: |
-        echo "LASTFM_API_KEY=${{ secrets.LASTFM_API_KEY }}" > local.properties
-        echo "LASTFM_SECRET=${{ secrets.LASTFM_SECRET }}" >> local.properties
-        echo "LISTEN_TOGETHER_SERVER=${{ secrets.LISTEN_TOGETHER_SERVER }}" >> local.properties
-
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > bitchord-release.jks
-        {
-          echo "storeFile=bitchord-release.jks"
-          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}"
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}"
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}"
-        } > keystore.properties
-
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-
-    - name: Build Signed Prod Release APK
-      run: ./gradlew assembleProdRelease
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: bitchord-prod-release-signed
-        path: app/build/outputs/apk/prod/release/*.apk
-
-    # Built by the same assembleProdRelease, with the same key. The watch app
-    # only pairs with a phone app signed by the same key, so a prod watch APK
-    # for these phone builds can only come from here, never a local build.
-    - name: Upload Wear OS APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: bitchord-wear-prod-release-signed
-        path: wearos/build/outputs/apk/prod/release/*.apk
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Configure fork version
+        id: version
+        run: python3 .github/scripts/fork-version.py
+      - name: Configure release signing
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          names = ['KEYSTORE_BASE64', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD']
+          present = [bool(os.environ.get(n)) for n in names]
+          if any(present) and not all(present):
+              raise SystemExit('Set all four signing secrets; see FORK.md')
+          signed = all(present)
+          if signed:
+              Path('bitchord-release.jks').write_bytes(base64.b64decode(os.environ['KEYSTORE_BASE64'], validate=False))
+              def escape(s):
+                  return s.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r').replace('=', '\\=').replace(':', '\\:').replace(' ', '\\ ')
+              props = {'storeFile': 'bitchord-release.jks', 'storePassword': os.environ['KEYSTORE_PASSWORD'],
+                       'keyAlias': os.environ['KEY_ALIAS'], 'keyPassword': os.environ['KEY_PASSWORD']}
+              Path('keystore.properties').write_text(''.join(f'{k}={escape(v)}\n' for k, v in props.items()))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'signed={str(signed).lower()}\n')
+          PY
+      - name: Test and build production release
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testProdReleaseUnitTest :app:assembleProdRelease
+      - name: Prepare APK assets
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          python3 - <<'PY'
+          import json, os, shutil
+          from pathlib import Path
+          root = Path('app/build/outputs/apk/prod/release')
+          meta = json.loads((root / 'output-metadata.json').read_text())
+          for item in meta['elements']:
+              abi = next((f['value'] for f in item['filters'] if f['filterType'] == 'ABI'), None)
+              suffix = f'_{abi}' if abi else ''
+              shutil.copy2(root / item['outputFile'], f'dist/BitChord-v{os.environ["VERSION"]}{suffix}.apk')
+          PY
+          cd dist
+          sha256sum *.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BitChord-prod-release-${{ steps.signing.outputs.signed == 'true' && 'signed' || 'UNSIGNED' }}
+          path: dist/*
+          if-no-files-found: error
+      - name: Verify signed APKs are release builds
+        if: steps.signing.outputs.signed == 'true'
+        run: |
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          for apk in dist/*.apk; do
+            "$BUILD_TOOLS/apksigner" verify "$apk"
+            if "$BUILD_TOOLS/aapt" dump badging "$apk" | grep -q application-debuggable; then
+              echo 'Refusing to publish a debuggable APK'; exit 1
+            fi
+          done
+      - name: Publish signed release to this fork
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" dist/* --target "$(git rev-parse HEAD)" \
+            --title "BitChord $VERSION · BMW Bluetooth fix" \
+            --notes 'Production release with Bluetooth repeat protection and updates from Bodo121/BitChord. Includes upstream changes from the source commit linked by this release.'
+      - name: Explain missing signing key
+        if: steps.signing.outputs.signed != 'true'
+        run: |
+          echo '### Release built unsigned' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Set the four signing secrets listed in FORK.md, then run this workflow again for an installable APK and in-app updates. Unsigned APKs are not published to Releases.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove signing material
+        if: always()
+        run: rm -f bitchord-release.jks keystore.properties
