@@ -32,6 +32,20 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
+      - name: Configure ARM64-only phone APK
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle.kts')
+          source = p.read_text()
+          abis = 'include("armeabi-v7a", "arm64-v8a", "x86_64")'
+          universal = 'isUniversalApk = true'
+          if source.count(abis) != 1 or source.count(universal) != 1:
+              raise SystemExit('Upstream ABI configuration changed; review ARM64-only settings')
+          source = source.replace(abis, 'include("arm64-v8a")')
+          source = source.replace(universal, 'isUniversalApk = false')
+          p.write_text(source)
+          PY
       - name: Configure fork version
         id: version
         run: python3 .github/scripts/fork-version.py
@@ -78,17 +92,20 @@ jobs:
           from pathlib import Path
           root = Path('app/build/outputs/apk/prod/release')
           meta = json.loads((root / 'output-metadata.json').read_text())
-          for item in meta['elements']:
-              abi = next((f['value'] for f in item['filters'] if f['filterType'] == 'ABI'), None)
-              suffix = f'_{abi}' if abi else ''
-              shutil.copy2(root / item['outputFile'], f'dist/BitChord-v{os.environ["VERSION"]}{suffix}.apk')
+          elements = meta['elements']
+          if len(elements) != 1:
+              raise SystemExit('Expected exactly one ARM64 APK')
+          item = elements[0]
+          abi = next((f['value'] for f in item['filters'] if f['filterType'] == 'ABI'), None)
+          if abi != 'arm64-v8a':
+              raise SystemExit(f'Refusing to publish unexpected ABI: {abi}')
+          shutil.copy2(root / item['outputFile'],
+                       f'dist/BitChord-v{os.environ["VERSION"]}_arm64-v8a.apk')
           PY
-          cd dist
-          sha256sum *.apk > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: BitChord-prod-release-${{ steps.signing.outputs.signed == 'true' && 'signed' || 'UNSIGNED' }}
-          path: dist/*
+          path: dist/*_arm64-v8a.apk
           if-no-files-found: error
       - name: Verify signed APKs are release builds
         if: steps.signing.outputs.signed == 'true'
@@ -106,7 +123,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create "v$VERSION" dist/* --target "$(git rev-parse HEAD)" \
+          gh release create "v$VERSION" "dist/BitChord-v${VERSION}_arm64-v8a.apk" --target "$(git rev-parse HEAD)" \
             --title "BitChord $VERSION · BMW Bluetooth fix" \
             --notes 'Production release with Bluetooth repeat protection and updates from Bodo121/BitChord. Includes upstream changes from the source commit linked by this release.'
       - name: Explain missing signing key
