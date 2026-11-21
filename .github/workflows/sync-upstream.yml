@@ -18,15 +18,19 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      - name: Merge official main while retaining fork patches
+      - name: Merge latest official release while retaining fork patches
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git remote add upstream https://github.com/kushagrasinghx/BitChord.git
-          git fetch upstream main
+          UPSTREAM_TAG=$(gh release view --repo kushagrasinghx/BitChord --json tagName --jq .tagName)
+          test -n "$UPSTREAM_TAG"
+          git fetch upstream "refs/tags/$UPSTREAM_TAG"
           # A three-way merge keeps our patch commits. A conflict stops the
           # workflow before pushing; it never resets or force-pushes main.
-          git merge --no-edit upstream/main
+          git merge --no-edit FETCH_HEAD
           python3 .github/scripts/check-fork.py
           git push origin HEAD:main
   # GITHUB_TOKEN pushes do not trigger other push workflows. Explicitly call

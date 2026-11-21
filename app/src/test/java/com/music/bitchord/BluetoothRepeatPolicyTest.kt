@@ -28,7 +28,7 @@ class BluetoothRepeatPolicyTest {
 
     @Test
     fun `phone watch and Android Auto can still choose repeat`() {
-        listOf("com.music.bitchord", "com.dev.bitchord", "com.music.bitchord.wear",
+        listOf("com.bodo121.bitchord", "com.bodo121.bitchord.dev", "com.music.bitchord",
             "com.google.android.projection.gearhead", "com.android.systemui").forEach { caller ->
             assertTrue(BluetoothRepeatPolicy.allowsCommand(caller, Player.COMMAND_SET_REPEAT_MODE))
         }

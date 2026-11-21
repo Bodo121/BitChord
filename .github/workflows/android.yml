@@ -113,7 +113,11 @@ jobs:
           BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           for apk in dist/*.apk; do
             "$BUILD_TOOLS/apksigner" verify "$apk"
-            if "$BUILD_TOOLS/aapt" dump badging "$apk" | grep -q application-debuggable; then
+            BADGING=$("$BUILD_TOOLS/aapt" dump badging "$apk")
+            if ! grep -Fq "package: name='com.bodo121.bitchord'" <<< "$BADGING"; then
+              echo 'Refusing to publish an APK with the official package ID'; exit 1
+            fi
+            if grep -q application-debuggable <<< "$BADGING"; then
               echo 'Refusing to publish a debuggable APK'; exit 1
             fi
           done

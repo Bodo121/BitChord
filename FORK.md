@@ -56,7 +56,7 @@ version lines untouched for easier merging.
 ## Get official changes and retain the fix
 
 Actions → **Sync upstream and build release** → **Run workflow**.
-This fetches `kushagrasinghx/BitChord` main, performs a three-way merge retaining
+This fetches the latest stable `kushagrasinghx/BitChord` release tag, performs a three-way merge retaining
 this fork's patch commits, checks the fix remains integrated, pushes main, then
 explicitly runs the release builder. It works even when upstream is unchanged.
 No manual patch copying, resets or force pushes are used. If upstream changes
@@ -64,3 +64,21 @@ the same code incompatibly, the merge fails before pushing; resolve the conflict
 in a branch, keeping our update URL, repeat policy and workflows, then rerun.
 Use this workflow for syncing; GitHub's destructive 'discard commits' option
 would remove the fork fixes.
+
+## Side-by-side identity and release sync
+
+As of upstream v1.10, this fork installs as **BitChord Bodo** with Android
+application ID `com.bodo121.bitchord` (TV: `com.bodo121.bitchord.tv`).
+The bundled watch app uses the phone package and existing fork signing key.
+Kotlin namespaces and component class names remain upstream-compatible.
+Provider authorities already derive from the application ID.
+
+The official app and this fork can coexist, with separate app data and logins.
+The earlier fork used the official package; Android treats this as a new app,
+so existing settings are not migrated automatically. Use an exported backup
+when moving data. Google Drive authorization may require an OAuth Android
+client registered for the fork package and signing certificate.
+
+The sync workflow now fetches the latest stable upstream **release tag**, not
+upstream main (v1.10 was published from the v1.9.2 branch). It retains fork
+patches and checks the application IDs before pushing.
