@@ -77,7 +77,7 @@ android {
     defaultConfig {
         // Its own id, so the TV app is a separate install from the phone app
         // rather than an upgrade over it (or under it).
-        applicationId = "com.music.bitchord.tv"
+        applicationId = "com.bodo121.bitchord.tv"
         // 26 keeps reach wide; real-time blur (RenderEffect) kicks in on API 31+,
         // Haze falls back to a translucent scrim below that.
         minSdk = 26
@@ -150,11 +150,12 @@ android {
     productFlavors {
         create("dev") {
             dimension = "env"
-            applicationId = "com.dev.bitchord.tv"
+            applicationId = "com.bodo121.bitchord.dev.tv"
             resValue("string", "app_name", "BitChord TV")
         }
         create("prod") {
             dimension = "env"
+            resValue("string", "app_name", "BitChord Bodo")
             resValue("string", "app_name", "BitChord TV")
         }
     }
@@ -481,10 +482,10 @@ val verifyDevInstall = tasks.register("verifyDevInstall") {
             .drop(1)
             .mapNotNull { line -> line.split('\t').takeIf { it.size == 2 && it[1] == "device" }?.get(0) }
         serials.forEach { serial ->
-            logger.lifecycle("verifyDevInstall: compiling com.dev.bitchord on $serial")
+            logger.lifecycle("verifyDevInstall: compiling com.bodo121.bitchord.dev.tv on $serial")
             ProcessBuilder(
                 adbPath, "-s", serial, "shell", "cmd", "package", "compile",
-                "-m", "verify", "-f", "com.dev.bitchord",
+                "-m", "verify", "-f", "com.bodo121.bitchord.dev.tv",
             ).inheritIO().start().waitFor()
         }
     }
